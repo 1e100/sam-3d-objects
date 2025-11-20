@@ -14,10 +14,10 @@ import transformers
 # SAM 2 setup (via Hugging Face Transformers)
 # ---------------------------------------------------------------------------
 
-# Detect a suitable device (GPU/CPU/MPS).
-_SAM2_DEVICE = transformers.infer_device()
+# Select device for running SAM2.
+_SAM2_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-# Choose a SAM 2 checkpoint from HF Hub.
+# Use a SAM2 checkpoint from Hugging Face.
 _SAM2_MODEL_ID = "facebook/sam2.1-hiera-large"
 
 # Load model and processor once at startup.
@@ -36,7 +36,7 @@ def run_sam2_segmentation(
     points: List[Tuple[float, float]],
 ) -> Optional[np.ndarray]:
     """Run SAM 2 to get a single mask from a set of positive points."""
-    # Return early if there are no points to use as prompts.
+    # If there are no prompt points, skip segmentation.
     if not points:
         return None
 
@@ -50,7 +50,7 @@ def run_sam2_segmentation(
     labels_for_points: List[int] = [1 for _ in points]
     input_labels = [[[value for value in labels_for_points]]]
 
-    # Prepare batched model inputs for the image and point prompts.
+    # Prepare SAM2 processor inputs for the image and point prompts.
     inputs = _SAM2_PROCESSOR(
         images=image,
         input_points=input_points,
@@ -59,14 +59,14 @@ def run_sam2_segmentation(
     )
     inputs = inputs.to(_SAM2_DEVICE)
 
-    # Run the SAM 2 model forward pass with no gradients.
+    # Run the SAM 2 model forward pass without gradients.
     with torch.no_grad():
         outputs = _SAM2_MODEL(
             **inputs,
             multimask_output=False,
         )
 
-    # Post-process masks to the original image size.
+    # Post-process the predicted masks back to the original image size.
     all_masks = _SAM2_PROCESSOR.post_process_masks(
         outputs.pred_masks.cpu(),
         inputs["original_sizes"],
@@ -80,16 +80,15 @@ def run_sam2_segmentation(
         # Shape: [num_objects, num_masks, H, W].
         mask_tensor = masks_tensor[0, 0]
     elif masks_tensor.ndim == 3:
-        # Shape: [num_objects, H, W] (if multimask collapsed).
+        # Shape: [num_objects, H, W].
         mask_tensor = masks_tensor[0]
     elif masks_tensor.ndim == 2:
         # Shape: [H, W].
         mask_tensor = masks_tensor
     else:
-        # Unexpected shape: do not return a mask.
         return None
 
-    # Convert the mask to a NumPy boolean array for visualization.
+    # Convert the mask to a NumPy boolean array for drawing.
     mask = mask_tensor.numpy() > 0.5
     return mask
 
@@ -99,14 +98,14 @@ def overlay_mask_and_points(
     mask: Optional[np.ndarray],
     points: List[Tuple[float, float]],
 ) -> PIL.Image.Image:
-    """Overlay a segmentation mask and clicked points on top of the image."""
+    """Overlay segmentation mask and clicked points directly on the image."""
     # Convert base image to RGBA so we can alpha-blend overlays.
     base_image = image.convert("RGBA")
 
     # Create an empty transparent overlay for mask and points.
     overlay = PIL.Image.new("RGBA", base_image.size, (0, 0, 0, 0))
 
-    # If a mask is present, render it as a semi-transparent colored region.
+    # If a mask is present, draw it as a semi-transparent colored region.
     if mask is not None:
         mask_image = PIL.Image.new("RGBA", base_image.size, (0, 0, 0, 0))
         mask_alpha = 120
@@ -121,7 +120,7 @@ def overlay_mask_and_points(
 
         overlay = PIL.Image.alpha_composite(overlay, mask_image)
 
-    # Draw the clicked points on their own transparent layer.
+    # Draw the clicked points on a separate transparent layer.
     points_layer = PIL.Image.new("RGBA", base_image.size, (0, 0, 0, 0))
     draw = PIL.ImageDraw.Draw(points_layer)
 
@@ -177,23 +176,29 @@ def remove_nearest_point(
 
 def on_image_upload(
     image: PIL.Image.Image,
-) -> Tuple[PIL.Image.Image, List[Tuple[float, float]]]:
-    """Handle a new image upload and reset the point state."""
-    # Reset all prompts when a new image is uploaded.
+) -> Tuple[PIL.Image.Image, List[Tuple[float, float]], PIL.Image.Image]:
+    """Handle a new image upload, reset points, and show clean image."""
+    # Reset all prompt points when a new image is uploaded.
     points: List[Tuple[float, float]] = []
 
-    # Initial visualization: the clean image with no mask or points.
-    result_image = overlay_mask_and_points(image, None, points)
-    return result_image, points
+    # Initial visualization is just the clean original image.
+    display_image = overlay_mask_and_points(image, None, points)
+
+    # Return what will be shown, the empty points list, and the stored original.
+    return display_image, points, image
 
 
 def on_image_click(
-    image: PIL.Image.Image,
+    original_image: PIL.Image.Image,
     event: gr.SelectData,
     mode: str,
     points: List[Tuple[float, float]],
 ) -> Tuple[PIL.Image.Image, List[Tuple[float, float]]]:
-    """Handle a click to add or remove points and update SAM 2 mask."""
+    """Handle a click to add/remove points and update overlay on original."""
+    # If there is no original image stored yet, ignore the click.
+    if original_image is None:
+        return None, points  # Gradio will usually not call this before upload.
+
     # Read the pixel coordinates from the click event.
     x = float(event.index[0])
     y = float(event.index[1])
@@ -207,24 +212,28 @@ def on_image_click(
     else:
         updated_points = points
 
-    # Run SAM 2 with the new set of positive points.
-    mask = run_sam2_segmentation(image, updated_points)
+    # Run SAM 2 on the original image with the updated set of positive points.
+    mask = run_sam2_segmentation(original_image, updated_points)
 
-    # Render the resulting mask and points on top of the image.
-    result_image = overlay_mask_and_points(image, mask, updated_points)
-    return result_image, updated_points
+    # Render the overlay directly on the original image for display/clicking.
+    display_image = overlay_mask_and_points(original_image, mask, updated_points)
+    return display_image, updated_points
 
 
 def on_clear_points(
-    image: PIL.Image.Image,
+    original_image: PIL.Image.Image,
 ) -> Tuple[PIL.Image.Image, List[Tuple[float, float]]]:
-    """Clear all points and the associated mask for the image."""
+    """Clear all points and mask, returning the clean original image."""
+    # If there is no stored original image, return unchanged content.
+    if original_image is None:
+        return original_image, []
+
     # Reset all prompts to an empty list.
     points: List[Tuple[float, float]] = []
 
     # Show the original image with no mask or points.
-    result_image = overlay_mask_and_points(image, None, points)
-    return result_image, points
+    display_image = overlay_mask_and_points(original_image, None, points)
+    return display_image, points
 
 
 # ---------------------------------------------------------------------------
@@ -233,15 +242,16 @@ def on_clear_points(
 
 with gr.Blocks() as demo:
     gr.Markdown(
-        "# Interactive SAM 2 Segmentation (Point Prompts)\n"
-        "Upload an image, click to add positive points for a single object, "
-        "and use **Remove point** mode to delete points that cause unwanted mask regions."
+        "# Interactive SAM 2 Segmentation (Single Object, Point Prompts)\n"
+        "Upload an image, click to add positive points on the object, and use "
+        "**Remove point** mode to delete points that cause unwanted mask regions. "
+        "The mask is overlaid directly on the same image you are clicking."
     )
 
     with gr.Row():
         with gr.Column():
-            input_image = gr.Image(
-                label="Input image (click to add/remove points)",
+            image_component = gr.Image(
+                label="Image (mask + points overlaid; click to edit)",
                 type="pil",
                 interactive=True,
             )
@@ -251,35 +261,32 @@ with gr.Blocks() as demo:
                 label="Click mode",
             )
             clear_button = gr.Button("Clear all points")
-        with gr.Column():
-            result_image = gr.Image(
-                label="Segmentation result",
-                type="pil",
-                interactive=False,
-            )
+        # No separate result image: we always draw on top of this one.
 
-    # Keep the current list of clicked points as Gradio state.
+    # State: current list of points and original (unmodified) image.
     points_state = gr.State([])
+    original_image_state = gr.State(None)
 
-    # Reset points when a new image is uploaded.
-    input_image.upload(
+    # When a new image is uploaded, store the original and reset overlay/points.
+    image_component.upload(
         fn=on_image_upload,
-        inputs=input_image,
-        outputs=[result_image, points_state],
+        inputs=image_component,
+        outputs=[image_component, points_state, original_image_state],
     )
 
-    # Update points and mask when the image is clicked.
-    input_image.select(
+    # When the image is clicked, operate on the stored original image,
+    # but update the displayed image (with mask + points) in-place.
+    image_component.select(
         fn=on_image_click,
-        inputs=[input_image, mode_radio, points_state],
-        outputs=[result_image, points_state],
+        inputs=[original_image_state, mode_radio, points_state],
+        outputs=[image_component, points_state],
     )
 
-    # Clear all points and mask when the button is pressed.
+    # When clearing, drop all points and show the clean original again.
     clear_button.click(
         fn=on_clear_points,
-        inputs=[input_image],
-        outputs=[result_image, points_state],
+        inputs=[original_image_state],
+        outputs=[image_component, points_state],
     )
 
 if __name__ == "__main__":
