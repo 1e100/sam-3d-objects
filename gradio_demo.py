@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 
+import os
+import sys
+import tempfile
 from typing import List, Tuple, Optional
 
 import gradio as gr
@@ -8,6 +11,10 @@ import PIL.Image
 import PIL.ImageDraw
 import torch
 import transformers
+
+# Make notebook utilities importable (Inference lives in notebook/inference.py).
+sys.path.append("notebook")
+from inference import Inference
 
 
 # ---------------------------------------------------------------------------
@@ -35,6 +42,23 @@ _MASK_COLORS = [
     (255, 128, 0, 120),
     (128, 0, 255, 120),
 ]
+
+# ---------------------------------------------------------------------------
+# Reconstruction setup
+# ---------------------------------------------------------------------------
+
+# Use the same default checkpoint as demo.py.
+_INFERENCE_CONFIG_PATH = os.path.join("checkpoints", "hf", "pipeline.yaml")
+
+# Load reconstruction pipeline once to reuse weights across UI interactions.
+_INFERENCE_PIPELINE = Inference(_INFERENCE_CONFIG_PATH, compile=False)
+
+
+# Default status message for the reconstruction panel.
+_DEFAULT_STATUS = (
+    "After placing points and selecting an object, click **Run reconstruction** "
+    "to produce a Gaussian splat PLY from the active mask."
+)
 
 
 # ---------------------------------------------------------------------------
@@ -237,6 +261,11 @@ def _object_label(index: int) -> str:
     return f"Object {index + 1}"
 
 
+def _reset_reconstruction_outputs():
+    """Clear reconstruction viewer, download link, and status."""
+    return gr.update(value=None), gr.update(value=None), _DEFAULT_STATUS
+
+
 # ---------------------------------------------------------------------------
 # Gradio event handlers
 # ---------------------------------------------------------------------------
@@ -245,12 +274,22 @@ def _object_label(index: int) -> str:
 def on_image_upload(
     image: PIL.Image.Image,
 ) -> Tuple[
-    PIL.Image.Image, List[List[Tuple[float, float]]], int, PIL.Image.Image, object
+    PIL.Image.Image,
+    List[List[Tuple[float, float]]],
+    int,
+    PIL.Image.Image,
+    object,
+    List[Optional[np.ndarray]],
+    object,
+    object,
+    str,
 ]:
     """Handle a new image upload, resize, reset objects, and show clean image."""
     # If no image is provided, propagate empty content.
     if image is None:
-        return image, [], 0, image, gr.update(choices=[], value=None)
+        empty_dropdown = gr.update(choices=[], value=None)
+        resets = _reset_reconstruction_outputs()
+        return image, [], 0, image, empty_dropdown, [], *resets
 
     # Resize the uploaded image so that its longest side is at most 1024.
     resized = resize_to_max_side(image, max_side=1024)
@@ -268,8 +307,10 @@ def on_image_upload(
     choices = [_object_label(0)]
     dropdown_update = gr.update(choices=choices, value=_object_label(0))
 
-    # Return displayed image, objects state, active index, stored original, and dropdown update.
-    return display_image, objects, active_index, resized, dropdown_update
+    # Return displayed image, objects state, active index, stored original, and
+    # dropdown update.
+    resets = _reset_reconstruction_outputs()
+    return display_image, objects, active_index, resized, dropdown_update, [], *resets
 
 
 def on_image_click(
@@ -278,11 +319,19 @@ def on_image_click(
     mode: str,
     objects: List[List[Tuple[float, float]]],
     active_object_index: int,
-) -> Tuple[PIL.Image.Image, List[List[Tuple[float, float]]]]:
+) -> Tuple[
+    PIL.Image.Image,
+    List[List[Tuple[float, float]]],
+    List[Optional[np.ndarray]],
+    object,
+    object,
+    str,
+]:
     """Handle click to add/remove points on active object and update overlay."""
     # If there is no stored original image, ignore the click.
     if original_image is None:
-        return original_image, objects
+        resets = _reset_reconstruction_outputs()
+        return original_image, objects, [], *resets
 
     # Ensure there is at least one object list in the state.
     if not objects:
@@ -324,16 +373,28 @@ def on_image_click(
 
     # Render overlay (color masks + all points) directly on the original image.
     display_image = overlay_mask_and_points(original_image, object_masks, new_objects)
-    return display_image, new_objects
+    resets = _reset_reconstruction_outputs()
+    return display_image, new_objects, object_masks, *resets
 
 
 def on_clear_points(
     original_image: PIL.Image.Image,
-) -> Tuple[PIL.Image.Image, List[List[Tuple[float, float]]], int, object]:
+) -> Tuple[
+    PIL.Image.Image,
+    List[List[Tuple[float, float]]],
+    int,
+    object,
+    List[Optional[np.ndarray]],
+    object,
+    object,
+    str,
+]:
     """Clear all objects and points, returning the clean original image."""
     # If there is no stored original image, propagate empty content.
     if original_image is None:
-        return original_image, [], 0, gr.update(choices=[], value=None)
+        empty_dropdown = gr.update(choices=[], value=None)
+        resets = _reset_reconstruction_outputs()
+        return original_image, [], 0, empty_dropdown, [], *resets
 
     # Reset to a single empty object.
     objects: List[List[Tuple[float, float]]] = [[]]
@@ -347,17 +408,28 @@ def on_clear_points(
     dropdown_update = gr.update(choices=choices, value=_object_label(0))
 
     # Return updated display, object state, active index, and dropdown update.
-    return display_image, objects, active_index, dropdown_update
+    resets = _reset_reconstruction_outputs()
+    return display_image, objects, active_index, dropdown_update, [], *resets
 
 
 def on_create_new_object(
     original_image: PIL.Image.Image,
     objects: List[List[Tuple[float, float]]],
-) -> Tuple[PIL.Image.Image, List[List[Tuple[float, float]]], int, object]:
+) -> Tuple[
+    PIL.Image.Image,
+    List[List[Tuple[float, float]]],
+    int,
+    object,
+    List[Optional[np.ndarray]],
+    object,
+    object,
+    str,
+]:
     """Create a new empty object, set it active, and refresh the overlay."""
     # If there is no stored original image, do nothing useful.
     if original_image is None:
-        return original_image, objects, 0, gr.update()
+        resets = _reset_reconstruction_outputs()
+        return original_image, objects, 0, gr.update(), [], *resets
 
     # Start from current objects list, or an empty list if none.
     if objects is None:
@@ -388,18 +460,34 @@ def on_create_new_object(
     )
 
     # Return updated display, objects, active index, and dropdown update.
-    return display_image, new_objects, active_index, dropdown_update
+    resets = _reset_reconstruction_outputs()
+    return (
+        display_image,
+        new_objects,
+        active_index,
+        dropdown_update,
+        object_masks,
+        *resets,
+    )
 
 
 def on_change_active_object(
     original_image: PIL.Image.Image,
     objects: List[List[Tuple[float, float]]],
     active_label: str,
-) -> Tuple[PIL.Image.Image, int]:
+) -> Tuple[
+    PIL.Image.Image,
+    int,
+    List[Optional[np.ndarray]],
+    object,
+    object,
+    str,
+]:
     """Handle change of active object via dropdown and refresh the overlay."""
     # If there is no image or no objects, keep existing state.
     if original_image is None or not objects:
-        return original_image, 0
+        resets = _reset_reconstruction_outputs()
+        return original_image, 0, [], *resets
 
     # Parse the object index from the label like "Object 3".
     index = 0
@@ -423,7 +511,58 @@ def on_change_active_object(
 
     # Overlay color masks and all points on the original image.
     display_image = overlay_mask_and_points(original_image, object_masks, objects)
-    return display_image, index
+    resets = _reset_reconstruction_outputs()
+    return display_image, index, object_masks, *resets
+
+
+def on_reconstruct(
+    original_image: PIL.Image.Image,
+    object_masks: List[Optional[np.ndarray]],
+    active_object_index: int,
+) -> Tuple[object, object, str]:
+    """Run reconstruction for the active object mask and produce a PLY file."""
+    # Validate that an image and mask are available.
+    if original_image is None:
+        return gr.update(value=None), gr.update(value=None), (
+            "Upload an image and place points before reconstructing."
+        )
+
+    if not object_masks:
+        return gr.update(value=None), gr.update(value=None), (
+            "No SAM 2 masks found. Add points on the image first."
+        )
+
+    if active_object_index < 0 or active_object_index >= len(object_masks):
+        return gr.update(value=None), gr.update(value=None), (
+            "Active object selection is invalid; pick an object in the dropdown."
+        )
+
+    mask = object_masks[active_object_index]
+    if mask is None or not mask.any():
+        return gr.update(value=None), gr.update(value=None), (
+            "Active object has no mask. Add points to define it before running."
+        )
+
+    image_np = np.array(original_image)
+    try:
+        outputs = _INFERENCE_PIPELINE(image_np, mask, seed=42)
+    except Exception as exc:  # pragma: no cover - surfaced in UI
+        return gr.update(value=None), gr.update(value=None), (
+            f"Reconstruction failed: {exc}"
+        )
+
+    gs = outputs.get("gs")
+    if gs is None:
+        return gr.update(value=None), gr.update(value=None), (
+            "Reconstruction did not return Gaussian splats."
+        )
+
+    ply_dir = tempfile.mkdtemp(prefix="sam3d_", dir=".")
+    ply_path = os.path.join(ply_dir, "reconstruction.ply")
+    gs.save_ply(ply_path)
+
+    status = f"Reconstruction ready. Saved to {ply_path}"
+    return ply_path, ply_path, status
 
 
 # ---------------------------------------------------------------------------
@@ -433,14 +572,16 @@ def on_change_active_object(
 with gr.Blocks() as demo:
     gr.Markdown(
         "# Interactive SAM 2 Segmentation (Multiple Objects, Point Prompts)\n"
-        "Upload an image (resized to max 1024px on the longest side), click to add positive points "
-        "on the active object, use **Remove point** mode to delete points, and use "
-        "**Create new object** to start annotating another object. Each object is visualized with "
-        "a different mask color, all overlaid on the same image."
+        "Upload an image (resized to max 1024px on the longest side), click to add "
+        "positive points on the active object, use **Remove point** mode to delete "
+        "points, and use **Create new object** to start annotating another object. "
+        "Each object is visualized with a different mask color, all overlaid on the "
+        "same image. Use **Run reconstruction** to export the active object's mask "
+        "as a Gaussian splat PLY and preview it below."
     )
 
     with gr.Row():
-        with gr.Column():
+        with gr.Column(scale=1):
             image_component = gr.Image(
                 label="Image (colored masks + points overlaid; click to edit)",
                 type="pil",
@@ -458,12 +599,21 @@ with gr.Blocks() as demo:
             )
             create_object_button = gr.Button("Create new object")
             clear_button = gr.Button("Clear all points and objects")
-        # Single image pane: we always draw overlays directly on this image.
+        with gr.Column(scale=1):
+            gr.Markdown("### Reconstruction preview")
+            reconstruction_status = gr.Markdown(_DEFAULT_STATUS)
+            reconstruct_button = gr.Button("Run reconstruction", variant="primary")
+            model3d_component = gr.Model3D(
+                label="Gaussian splat (PLY)", clear_color=[0, 0, 0, 0]
+            )
+            ply_file_component = gr.File(label="Download PLY", file_count="single")
+        # Left pane: segmentation UI. Right pane: reconstruction UI.
 
     # State: list of objects (each object is a list of points) and active object index.
     objects_state = gr.State([])
     active_object_state = gr.State(0)
     original_image_state = gr.State(None)
+    object_masks_state = gr.State([])
 
     # When a new image is uploaded:
     image_component.upload(
@@ -475,6 +625,10 @@ with gr.Blocks() as demo:
             active_object_state,
             original_image_state,
             active_object_dropdown,
+            object_masks_state,
+            model3d_component,
+            ply_file_component,
+            reconstruction_status,
         ],
     )
 
@@ -490,6 +644,10 @@ with gr.Blocks() as demo:
         outputs=[
             image_component,
             objects_state,
+            object_masks_state,
+            model3d_component,
+            ply_file_component,
+            reconstruction_status,
         ],
     )
 
@@ -504,6 +662,10 @@ with gr.Blocks() as demo:
         outputs=[
             image_component,
             active_object_state,
+            object_masks_state,
+            model3d_component,
+            ply_file_component,
+            reconstruction_status,
         ],
     )
 
@@ -519,6 +681,10 @@ with gr.Blocks() as demo:
             objects_state,
             active_object_state,
             active_object_dropdown,
+            object_masks_state,
+            model3d_component,
+            ply_file_component,
+            reconstruction_status,
         ],
     )
 
@@ -531,6 +697,25 @@ with gr.Blocks() as demo:
             objects_state,
             active_object_state,
             active_object_dropdown,
+            object_masks_state,
+            model3d_component,
+            ply_file_component,
+            reconstruction_status,
+        ],
+    )
+
+    # When "Run reconstruction" is pressed:
+    reconstruct_button.click(
+        fn=on_reconstruct,
+        inputs=[
+            original_image_state,
+            object_masks_state,
+            active_object_state,
+        ],
+        outputs=[
+            model3d_component,
+            ply_file_component,
+            reconstruction_status,
         ],
     )
 
