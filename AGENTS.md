@@ -6,10 +6,10 @@
 - Patching utilities for upstream dependencies reside in `patching/`; keep custom fixes there instead of modifying vendored packages directly.
 
 ## Environment, Build, and Run
-- Create the suggested environment and install editable deps:  
-  `mamba env create -f environments/default.yml && mamba activate sam3d-objects`  
-  `pip install -e '.[dev]' && pip install -e '.[p3d]' && pip install -e '.[inference]'`
-- Set PyTorch wheels source before installs when needed: `export PIP_EXTRA_INDEX_URL="https://pypi.ngc.nvidia.com https://download.pytorch.org/whl/cu121"`.
+- Create the suggested environment with uv and install editable deps (extra
+  index URLs are already declared in the requirements files):  
+  `uv venv --python 3.11 .venv && source .venv/bin/activate`  
+  `uv pip install -e '.[dev]' && uv pip install -e '.[p3d]' && uv pip install -e '.[inference]'`
 - Run the single-image demo: `python demo.py`. Launch the Gradio UI locally: `python gradio_demo.py`.
 
 ## Coding Style & Naming Conventions
