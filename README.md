@@ -10,7 +10,7 @@ SAM 3D Objects is one part of SAM 3D, a pair of models for object and human mesh
 
 *Core contributor (Alphabetical, Equal Contribution), ⚬Intern, †Project leads, §Equal Contribution
 
-[[`Paper`](https://ai.meta.com/research/publications/sam-3d-3dfy-anything-in-images/)] [[`Code`](https://github.com/facebookresearch/sam-3d-objects)] [[`Website`](https://ai.meta.com/sam3d/)] [[`Demo`](https://www.aidemos.meta.com/segment-anything/editor/convert-image-to-3d)] [[`Blog`](https://ai.meta.com/blog/sam-3d/)] [[`BibTeX`](#citing-sam-3d-objects)]
+[[`Paper`](https://ai.meta.com/research/publications/sam-3d-3dfy-anything-in-images/)] [[`Code`](https://github.com/facebookresearch/sam-3d-objects)] [[`Website`](https://ai.meta.com/sam3d/)] [[`Demo`](https://www.aidemos.meta.com/segment-anything/editor/convert-image-to-3d)] [[`Blog`](https://ai.meta.com/blog/sam-3d/)] [[`BibTeX`](#citing-sam-3d-objects)] [[`Roboflow`](https://blog.roboflow.com/sam-3d/)]
 
 **SAM 3D Objects** is a foundation model that reconstructs full 3D shape geometry, texture, and layout from a single image, excelling in real-world scenarios with occlusion and clutter by using progressive training and a data engine with human feedback. It outperforms prior 3D generation models in human preference tests on real-world objects and scenes. We released code, weights, online demo, and a new challenging benchmark.
 
@@ -100,7 +100,7 @@ Rene  de la Fuente,
 Eva Galper,
 Cem Gokmen,
 Alex He,
-Emmanuel Hernandez,
+Enmanuel Hernandez,
 Dex Honsa,
 Leonna Jones,
 Arpit Kalla,
@@ -139,4 +139,14 @@ Yael Yungster
 
 If you use SAM 3D Objects in your research, please use the following BibTeX entry.
 
-< TODO: Add bibtex here >
+```
+@article{sam3dteam2025sam3d3dfyimages,
+      title={SAM 3D: 3Dfy Anything in Images}, 
+      author={SAM 3D Team and Xingyu Chen and Fu-Jen Chu and Pierre Gleize and Kevin J Liang and Alexander Sax and Hao Tang and Weiyao Wang and Michelle Guo and Thibaut Hardin and Xiang Li and Aohan Lin and Jiawei Liu and Ziqi Ma and Anushka Sagar and Bowen Song and Xiaodong Wang and Jianing Yang and Bowen Zhang and Piotr Dollár and Georgia Gkioxari and Matt Feiszli and Jitendra Malik},
+      year={2025},
+      eprint={2511.16624},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2511.16624}, 
+}
+```

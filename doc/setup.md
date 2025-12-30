@@ -1,5 +1,10 @@
 # Setup
 
+## Prerequisites
+
+* A linux 64-bits architecture (i.e. `linux-64` platform in `mamba info`).
+* A NVIDIA GPU with at least 32 Gb of VRAM.
+
 ## 1. Setup Python Environment
 
 Use [uv](https://github.com/astral-sh/uv) to create a virtual environment and
@@ -36,6 +41,9 @@ do this by running the following
 [steps](https://huggingface.co/docs/huggingface_hub/en/quick-start#authentication)
 (e.g. `hf auth login` after generating an access token).
 
+⚠️ SAM 3D Objects is available via HuggingFace globally, **except** in comprehensively sanctioned jurisdictions.
+Sanctioned jurisdiction will result in requests being **rejected**.
+
 ```bash
 pip install 'huggingface-hub[cli]<1.0'
 
@@ -48,3 +56,5 @@ hf download \
 mv checkpoints/${TAG}-download/checkpoints checkpoints/${TAG}
 rm -rf checkpoints/${TAG}-download
 ```
+
+
