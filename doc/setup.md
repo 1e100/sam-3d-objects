@@ -1,5 +1,10 @@
 # Setup
 
+## Prerequisites
+
+* A linux 64-bits architecture (i.e. `linux-64` platform in `mamba info`).
+* A NVIDIA GPU with at least 32 Gb of VRAM.
+
 ## 1. Setup Python Environment
 
 The following will install the default environment. If you use `conda` instead of `mamba`, replace its name in the first two lines. Note that you may have to build the environment on a compute node with GPU (e.g., you may get a `RuntimeError: Not compiled with GPU support` error when running certain parts of the code that use Pytorch3D).
@@ -34,6 +39,9 @@ need to be authenticated to download the checkpoints. You can do this by running
 the following [steps](https://huggingface.co/docs/huggingface_hub/en/quick-start#authentication)
 (e.g. `hf auth login` after generating an access token).
 
+⚠️ SAM 3D Objects is available via HuggingFace globally, **except** in comprehensively sanctioned jurisdictions.
+Sanctioned jurisdiction will result in requests being **rejected**.
+
 ```bash
 pip install 'huggingface-hub[cli]<1.0'
 
@@ -46,3 +54,5 @@ hf download \
 mv checkpoints/${TAG}-download/checkpoints checkpoints/${TAG}
 rm -rf checkpoints/${TAG}-download
 ```
+
+
