@@ -1,3 +1,6 @@
+--extra-index-url https://pypi.ngc.nvidia.com
+--extra-index-url https://download.pytorch.org/whl/cu121
+
 astor==0.8.1
 async-timeout==4.0.3
 # auto_gptq==0.7.1
