@@ -2,23 +2,24 @@
 
 ## 1. Setup Python Environment
 
-The following will install the default environment. If you use `conda` instead of `mamba`, replace its name in the first two lines. Note that you may have to build the environment on a compute node with GPU (e.g., you may get a `RuntimeError: Not compiled with GPU support` error when running certain parts of the code that use Pytorch3D).
+Use [uv](https://github.com/astral-sh/uv) to create a virtual environment and
+install all extras. The required package indexes are declared directly in the
+`requirements*.txt` files, so no extra environment variables are needed. Build
+on a GPU machine if you hit `RuntimeError: Not compiled with GPU support` while
+installing PyTorch3D-related packages.
 
 ```bash
-# create sam3d-objects environment
-mamba env create -f environments/default.yml
-mamba activate sam3d-objects
+# install uv if missing
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# for pytorch/cuda dependencies
-export PIP_EXTRA_INDEX_URL="https://pypi.ngc.nvidia.com https://download.pytorch.org/whl/cu121"
+# create and activate the environment
+uv venv --python 3.11 .venv
+source .venv/bin/activate
 
-# install sam3d-objects and core dependencies
-pip install -e '.[dev]'
-pip install -e '.[p3d]' # pytorch3d dependency on pytorch is broken, this 2-step approach solves it
-
-# for inference
-export PIP_FIND_LINKS="https://nvidia-kaolin.s3.us-east-2.amazonaws.com/torch-2.5.1_cu121.html"
-pip install -e '.[inference]'
+# install project plus optional extras
+uv pip install -e '.[dev]'
+uv pip install -e '.[p3d]'        # PyTorch3D helpers
+uv pip install -e '.[inference]'  # inference/kaolin/gradio stack
 
 # patch things that aren't yet in official pip packages
 ./patching/hydra # https://github.com/facebookresearch/hydra/pull/2863
@@ -28,10 +29,11 @@ pip install -e '.[inference]'
 
 ### From HuggingFace
 
-⚠️ Before using SAM 3D Objects, please request access to the checkpoints on the SAM 3D Objects
-Hugging Face [repo](https://huggingface.co/facebook/sam-3d-objects). Once accepted, you
-need to be authenticated to download the checkpoints. You can do this by running
-the following [steps](https://huggingface.co/docs/huggingface_hub/en/quick-start#authentication)
+⚠️ Before using SAM 3D Objects, please request access to the checkpoints on the
+SAM 3D Objects Hugging Face [repo](https://huggingface.co/facebook/sam-3d-objects).
+Once accepted, you need to be authenticated to download the checkpoints. You can
+do this by running the following
+[steps](https://huggingface.co/docs/huggingface_hub/en/quick-start#authentication)
 (e.g. `hf auth login` after generating an access token).
 
 ```bash
